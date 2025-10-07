@@ -8,8 +8,9 @@ class ExcelStore:
     """
     Tek sayfalı basit bir Excel tablosu için CRUD.
     - Her tabloda 'ID' kolonu bulunur (int). Yoksa oluşturur.
-    - Sayısal para kolonlarını (TL) string olarak yazarız, UI katmanı parse eder.
+    - Para kolonlarını string saklamak/okumak serbest; UI katmanı parse eder.
     """
+
     def __init__(self, file_path: Path, sheet_name: str, columns: Sequence[str], key_col: str = "ID"):
         self.file_path = Path(file_path)
         self.sheet_name = sheet_name
@@ -54,10 +55,9 @@ class ExcelStore:
         df = df[self.columns]
         # ID düzelt
         if "ID" in df.columns:
-            # string -> int (mümkünse)
             def _to_int(x):
                 try:
-                    return int(float(str(x)))  # "1.0" gibi şeyler için
+                    return int(float(str(x)))  # "1.0" gibi değerler için
                 except:
                     return None
             df["ID"] = df["ID"].apply(_to_int)
@@ -67,7 +67,8 @@ class ExcelStore:
         return df
 
     def _write(self, df: pd.DataFrame):
-        df = df[self.columns]
+        # Kolon sırası sabit
+        df = df[[c for c in self.columns if c in df.columns]]
         with pd.ExcelWriter(self.file_path, engine="openpyxl", mode="w") as w:
             df.to_excel(w, index=False, sheet_name=self.sheet_name)
 
@@ -84,7 +85,7 @@ class ExcelStore:
             search_cols = list(search_cols or [c for c in df.columns if c != "ID"])
             mask = None
             for c in search_cols:
-                if c not in df.columns: 
+                if c not in df.columns:
                     continue
                 col = df[c].fillna("").astype(str).str.lower()
                 m = col.str.contains(q, na=False)
@@ -105,9 +106,11 @@ class ExcelStore:
     def insert(self, data: Dict[str, Any]) -> int:
         df = self._read()
         new_id = self._next_id(df)
+        # satırı kolonlara uydur
         row = {c: data.get(c) for c in self.columns if c != "ID"}
         row["ID"] = new_id
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        # >>> FutureWarning yok: concat yerine loc ile ekle
+        df.loc[len(df)] = row
         self._write(df)
         return new_id
 
